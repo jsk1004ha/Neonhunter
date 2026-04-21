@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Neon Infinity: ETERNAL v4</title>
+    <title>Neon Infinity: LEGACY</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&display=swap');
 
@@ -12,8 +12,7 @@
             --c-sub: #ff0055;
             --c-gold: #ffd700;
             --c-dia: #00bfff;
-            --c-boss: #aa00ff;
-            --bg-ui: rgba(6, 8, 12, 0.94);
+            --bg-ui: rgba(6, 8, 12, 0.95);
         }
 
         body {
@@ -24,12 +23,12 @@
 
         #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
 
-        /* FX */
+        /* FX Overlay */
         #fx-layer {
             position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 5;
-            transition: background 0.05s;
+            transition: background 0.05s, transform 0.1s;
         }
-        .flash-crit { background: rgba(255, 255, 255, 0.2); }
+        .flash-crit { background: rgba(255, 50, 50, 0.2); transform: scale(1.05); }
         .flash-hit { background: rgba(255, 0, 0, 0.3); }
         
         #boss-warning {
@@ -146,6 +145,8 @@
             font-size: 0.8rem; text-align: center; cursor: pointer; padding: 4px; position: relative;
         }
         .inv-item.equipped { border-color: var(--c-main); box-shadow: inset 0 0 15px rgba(0,243,255,0.2); }
+        .inv-item.owned { border-color: #555; }
+        .inv-item.locked { opacity: 0.5; filter: grayscale(1); cursor: default; }
         .eq-badge { position: absolute; top: -5px; right: -5px; background: var(--c-main); color: #000; font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
 
         .btn-gacha {
@@ -229,6 +230,7 @@
             <div class="tabs">
                 <div class="tab active" onclick="ui.tab('up')">성장</div>
                 <div class="tab" onclick="ui.tab('skill')">스킬</div>
+                <div class="tab" onclick="ui.tab('skin')">스킨</div>
                 <div class="tab" onclick="ui.tab('forge')">대장간</div>
                 <div class="tab" onclick="ui.tab('gacha')">소환</div>
                 <div class="tab" onclick="ui.tab('set')">설정</div>
@@ -248,6 +250,11 @@
                 <div class="grid-4" id="ui-skill-inv"></div>
             </div>
 
+            <div id="p-skin" class="panel">
+                <div style="color:#888; font-size:0.9rem; margin-bottom:10px">획득한 스킨을 선택하여 장착하세요.</div>
+                <div class="grid-4" id="ui-skin-inv"></div>
+            </div>
+
             <div id="p-forge" class="panel">
                 <div style="text-align:center; margin-bottom:15px">
                     <div style="font-size:1.5rem; color:#fff" id="ui-forge-name">무기 이름</div>
@@ -261,7 +268,6 @@
                 <div class="btn-gacha" onclick="game.gacha('wep')">⚔️ 무기 소환 (100 다이아)</div>
                 <div class="btn-gacha" style="border-color:#00aaff; box-shadow:0 0 10px rgba(0,170,255,0.3)" onclick="game.gacha('skill')">⚡ 스킬 소환 (200 다이아)</div>
                 <div class="btn-gacha" style="border-color:#ff5555; box-shadow:0 0 10px rgba(255,85,85,0.3)" onclick="game.gacha('skin')">🎭 스킨 소환 (500 다이아)</div>
-                <div style="text-align:center; margin-top:10px; color:#666" id="ui-current-skin">스킨: Default</div>
             </div>
 
             <div id="p-set" class="panel">
@@ -294,7 +300,7 @@
             { id:'S', m:10.0, c:0xffaa00 }, { id:'SSS', m:30.0, c:0xff0000 }
         ];
         const SKINS = [
-            { id: 'default', name: 'Cyber Agent', tier: 'Common', color: 0x00f3ff, fx: 'none' },
+            { id: 'default', name: 'Cyber Agent', tier: 'Common', color: 0x00f3ff, fx: 'spark' },
             { id: 'hacker', name: 'The Hacker', tier: 'Rare', color: 0x00ff00, fx: 'binary' },
             { id: 'void', name: 'Void Stalker', tier: 'Rare', color: 0x9900ff, fx: 'blackhole' },
             { id: 'inferno', name: 'Inferno Lord', tier: 'Legend', color: 0xff3300, fx: 'fire' },
@@ -334,6 +340,7 @@
             up: { atk: {l:1, c:10}, hp: {l:1, c:20}, spd: {l:1, c:50}, crit: {l:1, c:100} },
             wep: { type: 'Sword', rank: RANKS[0], lv: 0 },
             skin: SKINS[0],
+            ownedSkins: ['default'], // IDs of owned skins
             skills: [],
             slots: [null, null, null, null],
             cds: [0,0,0,0],
@@ -349,21 +356,24 @@
                 stage: state.stage, wave: state.wave,
                 stats: state.stats, up: state.up,
                 wep: state.wep, skin: state.skin,
-                skills: state.skills, slots: state.slots
+                skills: state.skills, slots: state.slots,
+                ownedSkins: state.ownedSkins
             };
-            localStorage.setItem('neon_eternal_save', JSON.stringify(saveObj));
+            localStorage.setItem('neon_legacy_save', JSON.stringify(saveObj));
             ui.toast();
         }
 
         function loadGame() {
-            const data = localStorage.getItem('neon_eternal_save');
+            const data = localStorage.getItem('neon_legacy_save');
             if(data) {
                 const loaded = JSON.parse(data);
                 Object.assign(state, loaded);
-                // Fix References
                 state.wep.rank = RANKS.find(r => r.id === state.wep.rank.id) || RANKS[0];
-                state.skin = SKINS.find(s => s.id === state.skin.id) || SKINS[0];
+                // Ensure skin object is valid from ID or saved object
+                const skinId = state.skin.id || 'default';
+                state.skin = SKINS.find(s => s.id === skinId) || SKINS[0];
                 state.hp = state.maxHp;
+                if(!state.ownedSkins) state.ownedSkins = ['default'];
             }
         }
 
@@ -401,7 +411,7 @@
             playerGrp.clear();
             const s = state.skin;
             const matB = new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.3 });
-            const matN = new THREE.MeshStandardMaterial({ color: s.color, emissive: s.color, emissiveIntensity: 0.5 });
+            const matN = new THREE.MeshStandardMaterial({ color: s.color, emissive: s.color, emissiveIntensity: 0.8 });
 
             playerGrp.add(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.15, 0.7, 8), matB)).position.y = 1.0;
             
@@ -438,7 +448,6 @@
             const h = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6), hiltMat);
             h.rotation.x = Math.PI/2; wMesh.add(h);
 
-            // Reverted to simple box design as requested
             if(t === 'Sword' || t === 'Spear') {
                 const bl = t==='Spear'?2.5:1.5;
                 const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, bl, 0.1), wMat);
@@ -474,7 +483,6 @@
         function spawnEnemy(isBoss) {
             const k = isBoss?'boss':(Math.random()<0.2?'fast':(Math.random()<0.1?'tank':'norm'));
             const t = eTypes[k];
-            
             const geo = isBoss ? new THREE.IcosahedronGeometry(0.6, 1) : new THREE.DodecahedronGeometry(0.5);
             const mat = new THREE.MeshStandardMaterial({ color: t.c, emissive: t.c, emissiveIntensity: 0.3 });
             const e = new THREE.Mesh(geo, mat);
@@ -483,10 +491,10 @@
             e.scale.setScalar(t.s);
             e.lookAt(playerGrp.position);
             
-            const hpBase = 150 * state.stage * t.hp;
+            const hpBase = Math.round(200 * (state.stage ** 1.4) * t.hp);
             e.userData = {
                 type: k, hp: hpBase, maxHp: hpBase,
-                atk: (isBoss?30:10) + state.stage*3, spd: (4+state.stage*0.1)*(isBoss?0.4:1),
+                atk: (isBoss?60:10) + state.stage*4, spd: (4+state.stage*0.3)*(isBoss?0.4:1),
                 lastAtk: 0
             };
             
@@ -501,7 +509,7 @@
             enemies.push(e);
         }
 
-        // --- Particles ---
+        // --- Particles & FX ---
         const parts = [];
         const trailGeo = new THREE.PlaneGeometry(0.6, 3.0);
         function spawnTrail(pos, rot) {
@@ -511,36 +519,47 @@
             parts.push({m:m, life:0.3, type:'trail'});
         }
 
-        function spawnFX(pos, type, color) {
-            // FIX: Use MeshBasicMaterial to ensure visibility
-            const mat = new THREE.MeshBasicMaterial({ color: color, transparent:true, side:THREE.DoubleSide });
-            let geo;
-            
-            if(type === 'bin') {
-                mat.map = Math.random()>0.5 ? tex0 : tex1;
-                mat.color = new THREE.Color(0xffffff); // Use white for texture
-                geo = new THREE.PlaneGeometry(0.5, 0.5); // Bigger size
-            } else if (type === 'beam') {
-                geo = new THREE.CylinderGeometry(0.2, 0.5, 15, 8, 1, true);
+        function spawnDeathFX(pos) {
+            const fx = state.skin.fx;
+            const col = state.skin.color;
+            let count = 15;
+            let mat, geo, type = 'spark';
+
+            if(fx === 'binary') {
+                mat = new THREE.MeshBasicMaterial({ map:Math.random()>0.5?tex0:tex1, transparent:true, side:2, color:0xffffff });
+                geo = new THREE.PlaneGeometry(0.5,0.5);
+                count = 20; type = 'binary';
+            } else if (fx === 'fire') {
+                mat = new THREE.MeshBasicMaterial({ color: 0xff5500, transparent:true });
+                geo = new THREE.BoxGeometry(0.3,0.3,0.3);
+                type = 'fire';
+            } else if (fx === 'blackhole') {
+                mat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent:true });
+                geo = new THREE.SphereGeometry(0.2);
+                type = 'void';
+            } else if (fx === 'light') {
+                mat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent:true });
+                geo = new THREE.CylinderGeometry(0.1, 0.1, 10, 8);
+                type = 'light'; count = 5;
             } else {
-                geo = new THREE.BoxGeometry(0.3,0.3,0.3); // Bigger parts
+                mat = new THREE.MeshBasicMaterial({ color: col, transparent:true });
+                geo = new THREE.BoxGeometry(0.2,0.2,0.2);
             }
-            
-            const count = (type==='die'||type==='bin') ? 20 : 5;
+
             for(let i=0; i<count; i++) {
                 const m = new THREE.Mesh(geo, mat.clone());
-                
-                // Spawn slightly above ground
                 m.position.copy(pos);
-                m.position.y += 0.5; 
                 
-                if(type==='beam') { m.rotation.x=Math.PI/2; m.position.z-=7.5; }
-                else {
-                    // Explosion velocity
-                    m.userData.v = new THREE.Vector3((Math.random()-0.5), Math.random()+0.5, (Math.random()-0.5)).multiplyScalar(0.8);
+                if(type === 'light') {
+                    m.position.y += 5;
+                } else if(type === 'binary') {
+                    m.lookAt(camera.position);
+                    m.userData.v = new THREE.Vector3((Math.random()-0.5), Math.random(), (Math.random()-0.5)).multiplyScalar(0.5);
+                } else {
+                    m.userData.v = new THREE.Vector3((Math.random()-0.5), Math.random(), (Math.random()-0.5)).multiplyScalar(0.7);
                 }
                 scene.add(m);
-                parts.push({m, life: type==='beam'?0.4:1.2, type});
+                parts.push({m, life:1.0, type:type});
             }
         }
 
@@ -556,10 +575,14 @@
 
             if(state.dead) return;
 
+            // Camera Logic (Shake & Zoom)
+            let zoom = 12;
+            if(atkPhase === 2 && atkT < 0.1) zoom = 10; // Zoom in on hit
+            
             if(shake>0) {
-                camera.position.set(5+(Math.random()-.5)*shake, 7+(Math.random()-.5)*shake, 12);
+                camera.position.set(5+(Math.random()-.5)*shake, 7+(Math.random()-.5)*shake, zoom);
                 shake = Math.max(0, shake-dt*3);
-            } else camera.position.set(5,7,12);
+            } else camera.position.set(5,7,zoom);
 
             if(state.mineCd > 0) {
                 state.mineCd -= dt;
@@ -575,7 +598,7 @@
                 ui.cd(i, s.cd, state.cds[i]);
                 if(state.cds[i] <= 0 && enemies.length > 0) {
                     state.cds[i] = s.cd;
-                    spawnFX(playerGrp.position, 'skill', s.color);
+                    // spawnFX(playerGrp.position, 'spark', s.color); // Basic skill FX
                     if(s.type==='Beam' || s.type==='Area') {
                         [...enemies].forEach(e => hit(e, s.dmg));
                     } else if(enemies[0]) hit(enemies[0], s.dmg);
@@ -645,24 +668,29 @@
             // Particles Update
             for(let i=parts.length-1; i>=0; i--) {
                 const p = parts[i];
+                p.life -= dt;
+                
                 if(p.type === 'trail') {
                     p.m.material.opacity -= dt*3;
                     p.m.scale.y += dt*10;
-                    if(p.m.material.opacity <= 0) { scene.remove(p.m); parts.splice(i,1); }
-                } else if(p.type === 'beam') {
-                    p.m.material.opacity -= dt*2;
-                    if(p.m.material.opacity <= 0) { scene.remove(p.m); parts.splice(i,1); }
-                } else {
-                    // Physics for explosion
-                    p.m.userData.life -= dt;
+                } else if(p.type === 'fire') {
+                    p.m.position.y += dt * 3; // Rise
+                    p.m.scale.multiplyScalar(0.95);
+                } else if(p.type === 'void') {
+                    p.m.scale.multiplyScalar(0.9);
+                    p.m.rotation.x += dt*5;
+                } else if(p.type === 'light') {
+                    p.m.scale.x += dt*20; p.m.scale.z += dt*20;
+                    p.m.material.opacity -= dt;
+                } else { // Spark/Binary
                     if(p.m.userData.v) {
-                        p.m.position.add(p.m.userData.v.clone().multiplyScalar(dt*10)); // Speed up
-                        p.m.userData.v.y -= dt * 2; // Gravity
+                        p.m.position.add(p.m.userData.v.clone().multiplyScalar(dt*5));
+                        p.m.userData.v.y -= dt; // Gravity
                     }
                     p.m.rotation.z += dt*5;
-                    p.m.scale.setScalar(p.m.userData.life);
-                    if(p.m.userData.life <= 0) { scene.remove(p.m); parts.splice(i,1); }
                 }
+                
+                if(p.life <= 0 || p.m.scale.x < 0.01) { scene.remove(p.m); parts.splice(i,1); }
             }
 
             composer.render();
@@ -678,20 +706,15 @@
             
             e.userData.hp -= dmg;
             ui.ft(Math.floor(dmg), e.position, isCrit);
-            spawnFX(e.position, 'spark', 0xffffff);
             
-            // FIX: Knockback away from player using World Vector
+            // Knockback away from player
             const pushDir = new THREE.Vector3().subVectors(e.position, playerGrp.position).normalize();
-            pushDir.y = 0;
-            e.position.add(pushDir.multiplyScalar(0.8));
+            pushDir.y = 0; e.position.add(pushDir.multiplyScalar(0.8));
 
             if(e.userData.type === 'boss') ui.bossHp(e.userData.hp, e.userData.maxHp);
 
             if(e.userData.hp <= 0) {
-                // Determine FX type
-                const fxType = state.skin.fx === 'binary' ? 'bin' : 'die';
-                spawnFX(e.position, fxType, state.skin.color);
-                
+                spawnDeathFX(e.position);
                 scene.remove(e);
                 
                 const idx = enemies.indexOf(e);
@@ -736,6 +759,7 @@
                 document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
                 document.getElementById('p-'+id).classList.add('active');
                 event.target.classList.add('active');
+                if(id==='skin') ui.renderSkinInv();
             },
             hud: () => {
                 document.getElementById('ui-gold').innerText = Math.floor(state.gold).toLocaleString();
@@ -804,6 +828,30 @@
                             saveGame(); 
                         }
                     };
+                    c.appendChild(d);
+                });
+            },
+            renderSkinInv: () => {
+                const c = document.getElementById('ui-skin-inv');
+                c.innerHTML = '';
+                SKINS.forEach(s => {
+                    const owned = state.ownedSkins.includes(s.id);
+                    const equipped = state.skin.id === s.id;
+                    const d = document.createElement('div');
+                    d.className = `inv-item ${owned ? (equipped?'equipped':'owned') : 'locked'}`;
+                    d.style.borderColor = '#' + s.color.toString(16);
+                    d.innerHTML = `${s.name}<br><span style="color:#aaa; font-size:0.6rem">${s.tier}</span>`;
+                    if(equipped) d.innerHTML += `<div class="eq-badge">E</div>`;
+                    if(!owned) d.innerHTML += `<div style="font-size:1.5rem">🔒</div>`;
+                    
+                    if(owned) {
+                        d.onclick = () => {
+                            state.skin = s;
+                            buildPlayer();
+                            ui.renderSkinInv();
+                            saveGame();
+                        };
+                    }
                     c.appendChild(d);
                 });
             },
@@ -889,18 +937,15 @@
                     ui.modal("NEW SKILL!", s.name, '#'+s.color.toString(16));
                 } else if(type === 'skin') {
                     const s = SKINS[Math.floor(Math.random()*SKINS.length)];
-                    state.skin = s;
-                    buildPlayer();
-                    document.getElementById('ui-current-skin').innerText = `스킨: ${s.name}`;
-                    ui.modal("NEW SKIN!", `[${s.tier}] ${s.name}`, '#'+s.color.toString(16));
+                    if(state.ownedSkins.includes(s.id)) {
+                        state.dia += 250;
+                        ui.modal("중복 획득", "이미 보유한 스킨 (+250 DIA)", "#aaa");
+                    } else {
+                        state.ownedSkins.push(s.id);
+                        ui.modal("NEW SKIN!", `[${s.tier}] ${s.name}`, '#'+s.color.toString(16));
+                    }
                 }
                 ui.hud(); saveGame();
-            },
-            resetData: () => {
-                if(confirm("모든 데이터를 초기화하시겠습니까?")) {
-                    localStorage.removeItem('neon_eternal_save');
-                    location.reload();
-                }
             }
         };
         window.game = game;
@@ -914,7 +959,6 @@
         document.getElementById('ui-forge-name').innerText = state.wep.type;
         document.getElementById('ui-forge-rank').innerText = `Rank ${state.wep.rank.id}`;
         document.getElementById('ui-forge-lv').innerText = '+' + state.wep.lv;
-        document.getElementById('ui-current-skin').innerText = `스킨: ${state.skin.name}`;
         
         update();
 
@@ -928,3 +972,5 @@
     </script>
 </body>
 </html>
+
+
