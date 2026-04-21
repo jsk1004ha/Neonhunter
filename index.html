@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Neon Infinity: ETERNAL v4</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&display=swap');
+
+        :root {
+            --c-main: #00f3ff;
+            --c-sub: #ff0055;
+            --c-gold: #ffd700;
+            --c-dia: #00bfff;
+            --c-boss: #aa00ff;
+            --bg-ui: rgba(6, 8, 12, 0.94);
+        }
+
+        body {
+            margin: 0; overflow: hidden; background: #000;
+            font-family: 'Teko', sans-serif; color: white;
+            user-select: none; -webkit-tap-highlight-color: transparent;
+        }
+
+        #game-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        /* FX */
+        #fx-layer {
+            position: fixed; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 5;
+            transition: background 0.05s;
+        }
+        .flash-crit { background: rgba(255, 255, 255, 0.2); }
+        .flash-hit { background: rgba(255, 0, 0, 0.3); }
+        
+        #boss-warning {
+            position: fixed; top: 35%; left: 0; width: 100%; text-align: center;
+            font-size: 6rem; color: var(--c-sub); font-weight: 900;
+            text-shadow: 0 0 30px red; display: none; z-index: 20; letter-spacing: 5px;
+            animation: warn 0.8s infinite;
+        }
+        @keyframes warn { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.2); opacity: 0; } }
+
+        /* Toast Message */
+        #toast {
+            position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 255, 0, 0.2); border: 1px solid #0f0; padding: 5px 20px;
+            border-radius: 20px; color: #afa; font-size: 1rem; pointer-events: none; opacity: 0;
+            transition: opacity 0.5s; z-index: 30;
+        }
+
+        /* UI */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;
+            pointer-events: none; display: flex; flex-direction: column;
+        }
+
+        .hud-top {
+            padding: 15px; background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, transparent 100%);
+            display: flex; justify-content: space-between; align-items: flex-start;
+        }
+        
+        .prog-info { color: #fff; text-shadow: 0 0 10px var(--c-main); }
+        .stage-txt { font-size: 3rem; font-weight: 700; line-height: 0.8; }
+        .wave-txt { font-size: 1.5rem; color: #ccc; }
+        .kill-count { font-size: 1.1rem; color: #888; }
+
+        .res-box { text-align: right; pointer-events: auto; }
+        .res-row { 
+            background: rgba(0,0,0,0.7); padding: 5px 15px; border-radius: 20px;
+            display: flex; align-items: center; justify-content: flex-end; gap: 8px; 
+            border: 1px solid #444; margin-bottom: 5px; font-size: 1.2rem;
+        }
+        .icon { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+        .icon.g { background: var(--c-gold); box-shadow: 0 0 8px var(--c-gold); }
+        .icon.d { background: var(--c-dia); box-shadow: 0 0 8px var(--c-dia); }
+
+        .btn-mine {
+            background: linear-gradient(45deg, #004466, #0088cc); border: 1px solid var(--c-dia);
+            border-radius: 8px; padding: 8px 15px; font-size: 1rem; cursor: pointer;
+            box-shadow: 0 0 15px rgba(0,191,255,0.4); display: inline-block; margin-top: 5px;
+        }
+
+        /* HP & Boss */
+        .bars-area {
+            position: absolute; top: 130px; left: 50%; transform: translateX(-50%);
+            width: 280px; display: flex; flex-direction: column; gap: 8px; align-items: center;
+        }
+        .hp-wrap { width: 100%; height: 16px; background: #111; border: 1px solid #555; border-radius: 4px; overflow: hidden; position: relative; }
+        .hp-fill { height: 100%; width: 100%; transition: width 0.1s; }
+        .hp-fill.player { background: linear-gradient(90deg, #ff5555, #ff0000); }
+        .hp-fill.boss { background: linear-gradient(90deg, #aa00ff, #5500aa); }
+        .hp-label { position: absolute; top: -2px; left: 0; width: 100%; height: 100%; text-align: center; font-size: 0.9rem; text-shadow: 1px 1px 2px #000; }
+        #boss-hp-container { display: none; width: 350px; height: 25px; border-color: var(--c-boss); box-shadow: 0 0 20px var(--c-boss); }
+
+        /* Skills */
+        .skill-dock {
+            position: absolute; right: 15px; bottom: 360px;
+            display: flex; flex-direction: column; gap: 12px; pointer-events: auto;
+        }
+        .skill-slot {
+            width: 55px; height: 55px; background: rgba(0,0,0,0.8);
+            border: 2px solid #333; border-radius: 10px; position: relative; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem; text-align: center; color: #555; font-weight: bold;
+        }
+        .skill-slot.filled { border-color: var(--c-main); color: #fff; box-shadow: 0 0 15px rgba(0,243,255,0.2); }
+        .skill-cd {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
+            background: rgba(0,0,0,0.8); transition: height 0.1s linear;
+        }
+
+        /* Bottom HUD */
+        .hud-bottom {
+            margin-top: auto; pointer-events: auto;
+            background: var(--bg-ui); border-top: 1px solid #333;
+            display: flex; flex-direction: column;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .tabs { display: flex; background: rgba(0,0,0,0.5); }
+        .tab {
+            flex: 1; padding: 15px 0; text-align: center; font-size: 1.3rem; color: #666; cursor: pointer;
+            transition: 0.2s; border-bottom: 3px solid transparent; letter-spacing: 1px;
+        }
+        .tab.active { color: var(--c-main); border-bottom-color: var(--c-main); background: linear-gradient(to top, rgba(0,243,255,0.1), transparent); text-shadow: 0 0 10px var(--c-main); }
+
+        .panel { height: 260px; overflow-y: auto; padding: 15px; display: none; }
+        .panel.active { display: block; animation: slideUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Cards & Buttons */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+        
+        .card {
+            background: rgba(255,255,255,0.03); border: 1px solid #444; padding: 12px;
+            border-radius: 8px; cursor: pointer; position: relative; transition: 0.1s;
+        }
+        .card:active { transform: scale(0.95); background: rgba(255,255,255,0.08); }
+        .card-t { font-size: 1rem; color: #888; margin-bottom: 4px; }
+        .card-v { font-size: 1.5rem; font-weight: 700; color: #fff; }
+        .card-c { position: absolute; top: 10px; right: 10px; font-size: 1rem; color: var(--c-gold); }
+
+        .inv-item {
+            aspect-ratio: 1; background: #151515; border: 1px solid #333; border-radius: 8px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 0.8rem; text-align: center; cursor: pointer; padding: 4px; position: relative;
+        }
+        .inv-item.equipped { border-color: var(--c-main); box-shadow: inset 0 0 15px rgba(0,243,255,0.2); }
+        .eq-badge { position: absolute; top: -5px; right: -5px; background: var(--c-main); color: #000; font-size: 0.7rem; padding: 2px 5px; border-radius: 4px; font-weight: bold; }
+
+        .btn-gacha {
+            width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 8px;
+            background: linear-gradient(45deg, #220033, #6600cc); border: 1px solid #aa00ff;
+            color: #fff; font-size: 1.3rem; cursor: pointer; text-align: center; font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .btn-forge {
+            width: 100%; padding: 20px; background: linear-gradient(45deg, #442200, #ff8800);
+            border: 1px solid #ffaa00; color: white; font-size: 1.5rem; text-align: center;
+            cursor: pointer; border-radius: 8px; font-weight: bold; text-shadow: 0 0 10px black;
+        }
+        .btn-reset { width: 100%; padding: 10px; background: #330000; border: 1px solid red; color: red; margin-top: 20px; cursor: pointer; }
+
+        /* Dmg Text */
+        #dmg-layer { position: absolute; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
+        .ft { position: absolute; font-weight: 900; font-size: 28px; animation: float 0.8s forwards; text-shadow: 2px 2px 0 #000; pointer-events: none; z-index: 100; }
+        .ft.crit { color: #ffeb3b; font-size: 40px; text-shadow: 0 0 10px red; }
+        .ft.player { color: #ff3333; font-size: 32px; }
+        @keyframes float { 0% { transform: translate(-50%,0) scale(0.5); opacity: 0; } 20% { opacity: 1; transform: translate(-50%,-40px) scale(1.2); } 100% { opacity: 0; transform: translate(-50%,-100px); } }
+
+        /* Modal */
+        #modal {
+            position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9);
+            z-index: 999; display: none; align-items: center; justify-content: center; flex-direction: column;
+            backdrop-filter: blur(8px);
+        }
+        .modal-box {
+            background: #1a1a20; border: 2px solid #444; width: 85%; max-width: 360px;
+            padding: 40px 20px; border-radius: 16px; text-align: center; box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes popIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="fx-layer"></div>
+    <div id="boss-warning">⚠️ WARNING: BOSS ⚠️</div>
+    <div id="toast">✅ Game Saved</div>
+
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="prog-info">
+                <div class="stage-txt" id="ui-stage">STAGE 1</div>
+                <div class="wave-txt">WAVE <span id="ui-wave">1</span></div>
+                <div class="kill-count" id="ui-kills">Kills: 0/10</div>
+            </div>
+            <div class="res-box">
+                <div class="res-row"><span class="icon g"></span><span id="ui-gold">0</span></div>
+                <div class="res-row"><span class="icon d"></span><span id="ui-dia">0</span></div>
+                <div class="btn-mine" id="btn-mine" onclick="game.mine()">💎 무료 채굴</div>
+            </div>
+        </div>
+
+        <div class="bars-area">
+            <div class="hp-wrap" id="boss-hp-container">
+                <div class="hp-fill boss" id="ui-boss-hp-fill"></div>
+                <div class="hp-label">BOSS <span id="ui-boss-hp-txt"></span></div>
+            </div>
+            <div class="hp-wrap">
+                <div class="hp-fill player" id="ui-hp-fill"></div>
+                <div class="hp-label"><span id="ui-hp"></span> / <span id="ui-maxhp"></span></div>
+            </div>
+        </div>
+
+        <div class="skill-dock" id="ui-active-skills"></div>
+        <div id="dmg-layer"></div>
+
+        <div class="hud-bottom">
+            <div class="tabs">
+                <div class="tab active" onclick="ui.tab('up')">성장</div>
+                <div class="tab" onclick="ui.tab('skill')">스킬</div>
+                <div class="tab" onclick="ui.tab('forge')">대장간</div>
+                <div class="tab" onclick="ui.tab('gacha')">소환</div>
+                <div class="tab" onclick="ui.tab('set')">설정</div>
+            </div>
+
+            <div id="p-up" class="panel active">
+                <div class="grid-2">
+                    <div class="card" onclick="game.up('atk')"><div class="card-t">공격력</div><div class="card-v" id="v-atk">Lv.1</div><div class="card-c" id="c-atk">10 G</div></div>
+                    <div class="card" onclick="game.up('hp')"><div class="card-t">체력</div><div class="card-v" id="v-hp">Lv.1</div><div class="card-c" id="c-hp">20 G</div></div>
+                    <div class="card" onclick="game.up('spd')"><div class="card-t">공격속도</div><div class="card-v" id="v-spd">Lv.1</div><div class="card-c" id="c-spd">50 G</div></div>
+                    <div class="card" onclick="game.up('crit')"><div class="card-t">치명타</div><div class="card-v" id="v-crit">10%</div><div class="card-c" id="c-crit">100 G</div></div>
+                </div>
+            </div>
+
+            <div id="p-skill" class="panel">
+                <div style="color:#888; font-size:0.9rem; margin-bottom:10px">클릭하여 장착/해제 (최대 4개)</div>
+                <div class="grid-4" id="ui-skill-inv"></div>
+            </div>
+
+            <div id="p-forge" class="panel">
+                <div style="text-align:center; margin-bottom:15px">
+                    <div style="font-size:1.5rem; color:#fff" id="ui-forge-name">무기 이름</div>
+                    <div style="font-size:1rem; color:#888" id="ui-forge-rank">Rank D</div>
+                    <div style="font-size:2rem; font-weight:bold; color:var(--c-main); text-shadow:0 0 10px var(--c-main)" id="ui-forge-lv">+0</div>
+                </div>
+                <div class="btn-forge" onclick="game.enchant()">🔨 강화하기 (<span id="ui-forge-cost">100</span> G)</div>
+            </div>
+
+            <div id="p-gacha" class="panel">
+                <div class="btn-gacha" onclick="game.gacha('wep')">⚔️ 무기 소환 (100 다이아)</div>
+                <div class="btn-gacha" style="border-color:#00aaff; box-shadow:0 0 10px rgba(0,170,255,0.3)" onclick="game.gacha('skill')">⚡ 스킬 소환 (200 다이아)</div>
+                <div class="btn-gacha" style="border-color:#ff5555; box-shadow:0 0 10px rgba(255,85,85,0.3)" onclick="game.gacha('skin')">🎭 스킨 소환 (500 다이아)</div>
+                <div style="text-align:center; margin-top:10px; color:#666" id="ui-current-skin">스킨: Default</div>
+            </div>
+
+            <div id="p-set" class="panel">
+                <div class="card" style="cursor:default">
+                    <div class="card-t">데이터 저장</div>
+                    <div class="card-v" style="font-size:1rem; color:#aaa">게임은 자동으로 저장됩니다.</div>
+                </div>
+                <button class="btn-reset" onclick="game.resetData()">⚠️ 데이터 초기화</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal" onclick="this.style.display='none'">
+        <div class="modal-box" id="modal-content"></div>
+    </div>
+
+    <div id="game-canvas"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- Config ---
+        const WEAPONS = ['Sword', 'Spear', 'Axe', 'Scythe'];
+        const RANKS = [
+            { id:'D', m:1.0, c:0x888888 }, { id:'C', m:1.5, c:0x00f3ff },
+            { id:'B', m:2.5, c:0x00ff00 }, { id:'A', m:5.0, c:0xaa00ff },
+            { id:'S', m:10.0, c:0xffaa00 }, { id:'SSS', m:30.0, c:0xff0000 }
+        ];
+        const SKINS = [
+            { id: 'default', name: 'Cyber Agent', tier: 'Common', color: 0x00f3ff, fx: 'none' },
+            { id: 'hacker', name: 'The Hacker', tier: 'Rare', color: 0x00ff00, fx: 'binary' },
+            { id: 'void', name: 'Void Stalker', tier: 'Rare', color: 0x9900ff, fx: 'blackhole' },
+            { id: 'inferno', name: 'Inferno Lord', tier: 'Legend', color: 0xff3300, fx: 'fire' },
+            { id: 'angel', name: 'Cyber Paladin', tier: 'Legend', color: 0xffffff, fx: 'light' },
+            { id: 'mech', name: 'Titan Mech', tier: 'Legend', color: 0xaaaaaa, fx: 'spark' }
+        ];
+        const SKILLS = [
+            { name: 'Fireball', type: 'Single', color: 0xff5500, cd: 2.0, dmg: 3.5 },
+            { name: 'Blizzard', type: 'Area', color: 0x00ffff, cd: 4.5, dmg: 2.0 },
+            { name: 'Thunder', type: 'Area', color: 0xffff00, cd: 3.5, dmg: 2.5 },
+            { name: 'Death Ray', type: 'Beam', color: 0xff00ff, cd: 6.0, dmg: 6.0 },
+            { name: 'Meteor', type: 'Area', color: 0xff3300, cd: 8.0, dmg: 8.0 },
+            { name: 'Poison', type: 'Dot', color: 0x00ff00, cd: 3.0, dmg: 1.5 }
+        ];
+
+        // --- Text Helper for 0/1 Particles ---
+        function createTextTexture(text, color) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.font = 'bold 40px Consolas, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 32, 32);
+            return new THREE.CanvasTexture(canvas);
+        }
+        const tex0 = createTextTexture('0', '#00ff00');
+        const tex1 = createTextTexture('1', '#00ff00');
+
+        // --- Game State ---
+        let state = {
+            gold: 0, dia: 1000,
+            stage: 1, wave: 1, kills: 0, killsReq: 10,
+            hp: 300, maxHp: 300,
+            stats: { atk: 20, spd: 1.0, crit: 0.1 },
+            up: { atk: {l:1, c:10}, hp: {l:1, c:20}, spd: {l:1, c:50}, crit: {l:1, c:100} },
+            wep: { type: 'Sword', rank: RANKS[0], lv: 0 },
+            skin: SKINS[0],
+            skills: [],
+            slots: [null, null, null, null],
+            cds: [0,0,0,0],
+            boss: null,
+            mineCd: 0,
+            dead: false
+        };
+
+        // --- Save System ---
+        function saveGame() {
+            const saveObj = {
+                gold: state.gold, dia: state.dia,
+                stage: state.stage, wave: state.wave,
+                stats: state.stats, up: state.up,
+                wep: state.wep, skin: state.skin,
+                skills: state.skills, slots: state.slots
+            };
+            localStorage.setItem('neon_eternal_save', JSON.stringify(saveObj));
+            ui.toast();
+        }
+
+        function loadGame() {
+            const data = localStorage.getItem('neon_eternal_save');
+            if(data) {
+                const loaded = JSON.parse(data);
+                Object.assign(state, loaded);
+                // Fix References
+                state.wep.rank = RANKS.find(r => r.id === state.wep.rank.id) || RANKS[0];
+                state.skin = SKINS.find(s => s.id === state.skin.id) || SKINS[0];
+                state.hp = state.maxHp;
+            }
+        }
+
+        // --- Three.js ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.02);
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(5, 7, 12);
+        camera.lookAt(0, 1.5, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        document.getElementById('game-canvas').appendChild(renderer.domElement);
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloom.threshold = 0; bloom.strength = 1.8; bloom.radius = 0.5;
+        composer.addPass(bloom);
+
+        const grid = new THREE.GridHelper(100, 40, 0x333333, 0x111111);
+        scene.add(grid);
+        const dl = new THREE.DirectionalLight(0xffffff, 2);
+        dl.position.set(5, 10, 5);
+        scene.add(dl);
+        scene.add(new THREE.AmbientLight(0x404040, 2));
+
+        // --- Player ---
+        const playerGrp = new THREE.Group();
+        scene.add(playerGrp);
+        let armGrp, wepGrp;
+
+        function buildPlayer() {
+            playerGrp.clear();
+            const s = state.skin;
+            const matB = new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.3 });
+            const matN = new THREE.MeshStandardMaterial({ color: s.color, emissive: s.color, emissiveIntensity: 0.5 });
+
+            playerGrp.add(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.15, 0.7, 8), matB)).position.y = 1.0;
+            
+            const head = new THREE.Group();
+            head.position.y = 1.55;
+            head.add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.35), matB));
+            if(s.tier === 'Legend') {
+                const halo = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.02, 16, 32), matN);
+                halo.rotation.x = Math.PI/2; halo.position.y = 0.3;
+                head.add(halo);
+            } else {
+                const visor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.2), matN);
+                visor.position.z = 0.1; head.add(visor);
+            }
+            playerGrp.add(head);
+
+            armGrp = new THREE.Group();
+            armGrp.position.set(0.35, 1.3, 0);
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), matB);
+            arm.position.y = -0.25; armGrp.add(arm);
+
+            wepGrp = new THREE.Group();
+            wepGrp.position.set(0, -0.5, 0);
+            
+            const wColor = state.wep.rank.c;
+            const wMat = new THREE.MeshStandardMaterial({ 
+                color: wColor, emissive: wColor, 
+                emissiveIntensity: 0.5 + (state.wep.lv * 0.1)
+            });
+            const hiltMat = new THREE.MeshStandardMaterial({ color: 0x444 });
+
+            let wMesh = new THREE.Group();
+            const t = state.wep.type;
+            const h = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6), hiltMat);
+            h.rotation.x = Math.PI/2; wMesh.add(h);
+
+            // Reverted to simple box design as requested
+            if(t === 'Sword' || t === 'Spear') {
+                const bl = t==='Spear'?2.5:1.5;
+                const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, bl, 0.1), wMat);
+                blade.rotation.x = Math.PI/2; blade.position.z = 0.3 + bl/2;
+                wMesh.add(blade);
+            } else if (t === 'Axe') {
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.0), hiltMat);
+                pole.rotation.x = Math.PI/2; pole.position.z = 0.7; wMesh.add(pole);
+                const headGeo = new THREE.BoxGeometry(0.8, 0.6, 0.1);
+                const headMesh = new THREE.Mesh(headGeo, wMat);
+                headMesh.position.z = 1.5; headMesh.rotation.x = Math.PI/2; wMesh.add(headMesh);
+            } else if (t === 'Scythe') {
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2), hiltMat);
+                pole.rotation.x = Math.PI/2; pole.position.z = 0.8; wMesh.add(pole);
+                const blade = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.05, 4, 12, 2.5), wMat);
+                blade.position.set(0, 0, 1.8); blade.rotation.y = Math.PI/2; wMesh.add(blade);
+            }
+
+            wepGrp.add(wMesh);
+            armGrp.add(wepGrp);
+            playerGrp.add(armGrp);
+        }
+
+        // --- Enemies ---
+        const enemies = [];
+        const eTypes = {
+            norm: { c: 0xff3333, hp: 1, s: 1 },
+            fast: { c: 0xffaa00, hp: 0.6, s: 0.8 },
+            tank: { c: 0x0055ff, hp: 2.5, s: 1.3 },
+            boss: { c: 0xaa00ff, hp: 30, s: 3.5 }
+        };
+
+        function spawnEnemy(isBoss) {
+            const k = isBoss?'boss':(Math.random()<0.2?'fast':(Math.random()<0.1?'tank':'norm'));
+            const t = eTypes[k];
+            
+            const geo = isBoss ? new THREE.IcosahedronGeometry(0.6, 1) : new THREE.DodecahedronGeometry(0.5);
+            const mat = new THREE.MeshStandardMaterial({ color: t.c, emissive: t.c, emissiveIntensity: 0.3 });
+            const e = new THREE.Mesh(geo, mat);
+            
+            e.position.set(isBoss?0:(Math.random()-0.5)*8, 0.6*t.s, -25 - Math.random()*5);
+            e.scale.setScalar(t.s);
+            e.lookAt(playerGrp.position);
+            
+            const hpBase = 150 * state.stage * t.hp;
+            e.userData = {
+                type: k, hp: hpBase, maxHp: hpBase,
+                atk: (isBoss?30:10) + state.stage*3, spd: (4+state.stage*0.1)*(isBoss?0.4:1),
+                lastAtk: 0
+            };
+            
+            if(isBoss) {
+                state.boss = e;
+                ui.boss(true);
+                ui.msg("BOSS WARNING!");
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.05, 8, 32), new THREE.MeshBasicMaterial({color:t.c}));
+                ring.rotation.x = Math.PI/2; e.add(ring);
+            }
+            scene.add(e);
+            enemies.push(e);
+        }
+
+        // --- Particles ---
+        const parts = [];
+        const trailGeo = new THREE.PlaneGeometry(0.6, 3.0);
+        function spawnTrail(pos, rot) {
+            const m = new THREE.Mesh(trailGeo, new THREE.MeshBasicMaterial({ color:state.wep.rank.c, transparent:true, opacity:0.5, side:2, blending:2 }));
+            m.position.copy(pos); m.rotation.copy(rot); m.rotateX(Math.PI/2); m.translateZ(1.5);
+            scene.add(m);
+            parts.push({m:m, life:0.3, type:'trail'});
+        }
+
+        function spawnFX(pos, type, color) {
+            // FIX: Use MeshBasicMaterial to ensure visibility
+            const mat = new THREE.MeshBasicMaterial({ color: color, transparent:true, side:THREE.DoubleSide });
+            let geo;
+            
+            if(type === 'bin') {
+                mat.map = Math.random()>0.5 ? tex0 : tex1;
+                mat.color = new THREE.Color(0xffffff); // Use white for texture
+                geo = new THREE.PlaneGeometry(0.5, 0.5); // Bigger size
+            } else if (type === 'beam') {
+                geo = new THREE.CylinderGeometry(0.2, 0.5, 15, 8, 1, true);
+            } else {
+                geo = new THREE.BoxGeometry(0.3,0.3,0.3); // Bigger parts
+            }
+            
+            const count = (type==='die'||type==='bin') ? 20 : 5;
+            for(let i=0; i<count; i++) {
+                const m = new THREE.Mesh(geo, mat.clone());
+                
+                // Spawn slightly above ground
+                m.position.copy(pos);
+                m.position.y += 0.5; 
+                
+                if(type==='beam') { m.rotation.x=Math.PI/2; m.position.z-=7.5; }
+                else {
+                    // Explosion velocity
+                    m.userData.v = new THREE.Vector3((Math.random()-0.5), Math.random()+0.5, (Math.random()-0.5)).multiplyScalar(0.8);
+                }
+                scene.add(m);
+                parts.push({m, life: type==='beam'?0.4:1.2, type});
+            }
+        }
+
+        // --- Main Loop ---
+        const clock = new THREE.Clock();
+        let time=0, lastAtk=0, shake=0;
+        let atkPhase=0, atkT=0; 
+
+        function update() {
+            requestAnimationFrame(update);
+            const dt = Math.min(clock.getDelta(), 0.1);
+            time += dt;
+
+            if(state.dead) return;
+
+            if(shake>0) {
+                camera.position.set(5+(Math.random()-.5)*shake, 7+(Math.random()-.5)*shake, 12);
+                shake = Math.max(0, shake-dt*3);
+            } else camera.position.set(5,7,12);
+
+            if(state.mineCd > 0) {
+                state.mineCd -= dt;
+                const btn = document.getElementById('btn-mine');
+                if(state.mineCd<=0) { btn.innerText = '💎 무료 채굴'; btn.style.filter='none'; }
+                else { btn.innerText = Math.ceil(state.mineCd)+'s'; btn.style.filter='grayscale(1)'; }
+            }
+
+            // Skills
+            state.slots.forEach((s,i) => {
+                if(!s) return;
+                state.cds[i] -= dt;
+                ui.cd(i, s.cd, state.cds[i]);
+                if(state.cds[i] <= 0 && enemies.length > 0) {
+                    state.cds[i] = s.cd;
+                    spawnFX(playerGrp.position, 'skill', s.color);
+                    if(s.type==='Beam' || s.type==='Area') {
+                        [...enemies].forEach(e => hit(e, s.dmg));
+                    } else if(enemies[0]) hit(enemies[0], s.dmg);
+                    shake = 0.3;
+                }
+            });
+
+            // Combat & Move
+            let nearest = null, minDist = 999;
+            const activeEnemies = [...enemies]; 
+
+            activeEnemies.forEach(e => {
+                const dist = e.position.distanceTo(playerGrp.position);
+                if(dist < minDist) { minDist = dist; nearest = e; }
+
+                if(dist > 4.0) { // Move
+                    const dir = new THREE.Vector3().subVectors(playerGrp.position, e.position).normalize();
+                    dir.y = 0;
+                    e.position.add(dir.multiplyScalar(e.userData.spd * dt));
+                    e.lookAt(playerGrp.position);
+                } else { // Atk
+                    if(time - e.userData.lastAtk > 1.5) {
+                        e.userData.lastAtk = time;
+                        e.translateZ(0.8); setTimeout(()=>e.translateZ(-0.8), 200);
+                        playerDmg(e.userData.atk);
+                    }
+                }
+            });
+
+            if(minDist > 4.5) { // RUN
+                atkPhase = 0;
+                grid.position.z += 10*dt; if(grid.position.z>10) grid.position.z=0;
+                enemies.forEach(e => e.position.z += 10*dt);
+                
+                if(!state.boss && enemies.length < 5 && Math.random() < 0.05) spawnEnemy(false);
+
+                playerGrp.position.y = Math.abs(Math.sin(time*10))*0.2;
+                armGrp.rotation.z = Math.sin(time*10)*0.5;
+                armGrp.rotation.y = 0;
+            } else { // FIGHT
+                playerGrp.position.y = 0;
+                const spd = state.stats.spd;
+                
+                if(atkPhase===0) { 
+                    if(time - lastAtk > 1/spd) { atkPhase=1; atkT=0; lastAtk=time; }
+                    else armGrp.rotation.z = THREE.MathUtils.lerp(armGrp.rotation.z, 0, dt*5);
+                } else if(atkPhase===1) { // Windup
+                    atkT += dt*spd*3;
+                    armGrp.rotation.z = -2.5; armGrp.rotation.y = 0.5;
+                    if(atkT > 0.4) { atkPhase=2; atkT=0; }
+                } else if(atkPhase===2) { // Slash
+                    atkT += dt;
+                    armGrp.rotation.z = 2.0; armGrp.rotation.y = -1.0;
+                    if(atkT < dt*2) { 
+                        spawnTrail(wepGrp.getWorldPosition(new THREE.Vector3()), armGrp.rotation);
+                        if(nearest) hit(nearest, 1.0);
+                        shake = 0.2;
+                    }
+                    if(atkT > 0.15) { atkPhase=3; atkT=0; }
+                } else if(atkPhase===3) { // Recover
+                    atkT += dt;
+                    armGrp.rotation.z = THREE.MathUtils.lerp(2.0, 0, atkT*3);
+                    if(atkT > 0.2) atkPhase=0;
+                }
+            }
+
+            // Particles Update
+            for(let i=parts.length-1; i>=0; i--) {
+                const p = parts[i];
+                if(p.type === 'trail') {
+                    p.m.material.opacity -= dt*3;
+                    p.m.scale.y += dt*10;
+                    if(p.m.material.opacity <= 0) { scene.remove(p.m); parts.splice(i,1); }
+                } else if(p.type === 'beam') {
+                    p.m.material.opacity -= dt*2;
+                    if(p.m.material.opacity <= 0) { scene.remove(p.m); parts.splice(i,1); }
+                } else {
+                    // Physics for explosion
+                    p.m.userData.life -= dt;
+                    if(p.m.userData.v) {
+                        p.m.position.add(p.m.userData.v.clone().multiplyScalar(dt*10)); // Speed up
+                        p.m.userData.v.y -= dt * 2; // Gravity
+                    }
+                    p.m.rotation.z += dt*5;
+                    p.m.scale.setScalar(p.m.userData.life);
+                    if(p.m.userData.life <= 0) { scene.remove(p.m); parts.splice(i,1); }
+                }
+            }
+
+            composer.render();
+        }
+
+        // --- Core Functions ---
+        function hit(e, mult) {
+            if(!enemies.includes(e)) return; 
+
+            let dmg = state.stats.atk * state.wep.rank.m * (1 + state.wep.lv*0.1) * mult;
+            const isCrit = Math.random() < state.stats.crit;
+            if(isCrit) { dmg *= 2.0; ui.flash('flash-crit'); }
+            
+            e.userData.hp -= dmg;
+            ui.ft(Math.floor(dmg), e.position, isCrit);
+            spawnFX(e.position, 'spark', 0xffffff);
+            
+            // FIX: Knockback away from player using World Vector
+            const pushDir = new THREE.Vector3().subVectors(e.position, playerGrp.position).normalize();
+            pushDir.y = 0;
+            e.position.add(pushDir.multiplyScalar(0.8));
+
+            if(e.userData.type === 'boss') ui.bossHp(e.userData.hp, e.userData.maxHp);
+
+            if(e.userData.hp <= 0) {
+                // Determine FX type
+                const fxType = state.skin.fx === 'binary' ? 'bin' : 'die';
+                spawnFX(e.position, fxType, state.skin.color);
+                
+                scene.remove(e);
+                
+                const idx = enemies.indexOf(e);
+                if(idx > -1) enemies.splice(idx, 1);
+                
+                if(e.userData.type === 'boss') {
+                    state.gold += 2000 * state.stage;
+                    state.dia += 200;
+                    state.stage++; state.wave=1; state.kills=0;
+                    state.boss = null; ui.boss(false);
+                    ui.flash('flash-crit');
+                    saveGame(); 
+                } else {
+                    state.gold += 20 + state.stage;
+                    state.kills++;
+                    if(state.kills >= state.killsReq) {
+                        state.kills = 0; state.wave++;
+                        if(state.wave > 5) {
+                            state.wave = 5;
+                            if(!state.boss) spawnEnemy(true);
+                        }
+                    }
+                }
+                ui.hud();
+            }
+        }
+
+        function playerDmg(amt) {
+            state.hp -= amt;
+            ui.hp(); ui.flash('flash-hit'); ui.ft(amt, playerGrp.position, false, true);
+            shake = 0.5;
+            if(state.hp <= 0) {
+                state.dead = true;
+                ui.modal("GAME OVER", "다시 시작하기", "#ff0000", () => location.reload());
+            }
+        }
+
+        // --- UI ---
+        const ui = {
+            tab: (id) => {
+                document.querySelectorAll('.panel').forEach(e=>e.classList.remove('active'));
+                document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
+                document.getElementById('p-'+id).classList.add('active');
+                event.target.classList.add('active');
+            },
+            hud: () => {
+                document.getElementById('ui-gold').innerText = Math.floor(state.gold).toLocaleString();
+                document.getElementById('ui-dia').innerText = Math.floor(state.dia).toLocaleString();
+                document.getElementById('ui-stage').innerText = `STAGE ${state.stage}`;
+                document.getElementById('ui-wave').innerText = state.wave;
+                document.getElementById('ui-kills').innerText = `Kills: ${state.kills}/${state.killsReq}`;
+                document.getElementById('ui-hp').innerText = Math.floor(state.hp);
+            },
+            hp: () => {
+                document.getElementById('ui-hp').innerText = Math.floor(Math.max(0,state.hp));
+                document.getElementById('ui-maxhp').innerText = Math.floor(state.maxHp);
+                document.getElementById('ui-hp-fill').style.width = (Math.max(0,state.hp)/state.maxHp)*100 + '%';
+            },
+            boss: (on) => {
+                document.getElementById('boss-hp-container').style.display = on ? 'block' : 'none';
+                if(on) document.getElementById('ui-boss-hp-fill').style.width = '100%';
+            },
+            bossHp: (c, m) => {
+                document.getElementById('ui-boss-hp-fill').style.width = (Math.max(0,c)/m)*100 + '%';
+                document.getElementById('ui-boss-hp-txt').innerText = `${Math.floor(c)}/${Math.floor(m)}`;
+            },
+            msg: (txt) => {
+                const w = document.getElementById('boss-warning');
+                w.innerText = txt; w.style.display = 'block';
+                setTimeout(()=>w.style.display='none', 3000);
+            },
+            flash: (c) => {
+                const l = document.getElementById('fx-layer');
+                l.className = c; setTimeout(()=>l.className='', 100);
+            },
+            ft: (v, pos, crit, p) => {
+                const d = document.createElement('div');
+                d.className = p?'ft player':(crit?'ft crit':'ft');
+                d.innerText = (p?'-':'') + Math.floor(v).toLocaleString();
+                const vec = pos.clone().add(new THREE.Vector3(0,1,0)).project(camera);
+                d.style.left = (vec.x*.5+.5)*window.innerWidth + 'px';
+                d.style.top = (-vec.y*.5+.5)*window.innerHeight + 'px';
+                document.getElementById('dmg-layer').appendChild(d);
+                setTimeout(()=>d.remove(), 800);
+            },
+            cd: (i, m, c) => {
+                const el = document.getElementById('cd-'+i);
+                if(el) el.style.height = Math.max(0, (c/m)*100) + '%';
+            },
+            toast: () => {
+                const t = document.getElementById('toast');
+                t.style.opacity = 1; setTimeout(()=>t.style.opacity=0, 1500);
+            },
+            renderInv: () => {
+                const c = document.getElementById('ui-skill-inv');
+                c.innerHTML = '';
+                state.skills.forEach(s => {
+                    const d = document.createElement('div');
+                    d.className = 'inv-item';
+                    const isEq = state.slots.some(sl => sl && sl.id === s.id);
+                    if(isEq) { d.classList.add('equipped'); d.innerHTML += `<div class="eq-badge">E</div>`; }
+                    d.style.borderColor = '#' + s.color.toString(16);
+                    d.innerHTML += `${s.name}<br><span style="color:#aaa; font-size:0.6rem">${s.type}</span>`;
+                    d.onclick = () => {
+                        if(state.slots.some(sl => sl && sl === s)) return; 
+                        const empty = state.slots.indexOf(null);
+                        if(empty !== -1) { 
+                            state.slots[empty] = s; 
+                            ui.renderSlots(); ui.renderInv(); 
+                            saveGame(); 
+                        }
+                    };
+                    c.appendChild(d);
+                });
+            },
+            renderSlots: () => {
+                const c = document.getElementById('ui-active-skills');
+                c.innerHTML = '';
+                state.slots.forEach((s, i) => {
+                    const d = document.createElement('div');
+                    d.className = s ? 'skill-slot filled' : 'skill-slot';
+                    d.innerHTML = s ? `${s.name}<div class="skill-cd" id="cd-${i}"></div>` : (i+1);
+                    if(s) d.style.borderColor = '#' + s.color.toString(16);
+                    d.onclick = () => { if(s) { state.slots[i] = null; ui.renderSlots(); ui.renderInv(); saveGame(); } };
+                    c.appendChild(d);
+                });
+            },
+            modal: (t, d, c, cb) => {
+                const m = document.getElementById('modal');
+                m.style.display = 'flex'; m.onclick = cb || (()=>m.style.display='none');
+                document.getElementById('modal-content').innerHTML = `<h2 style="color:${c}; margin:0">${t}</h2><p style="font-size:1.2rem">${d}</p><div style="font-size:0.8rem; color:#666; margin-top:15px">터치하여 닫기</div>`;
+            }
+        };
+        window.ui = ui;
+
+        // --- Logic ---
+        const game = {
+            up: (k) => {
+                const u = state.up[k];
+                if(state.gold >= u.c) {
+                    state.gold -= u.c; u.l++; u.c = Math.floor(u.c * 1.4);
+                    if(k==='atk') state.stats.atk = Math.floor(state.stats.atk * 1.2);
+                    if(k==='hp') { state.maxHp = Math.floor(state.maxHp * 1.2); state.hp = state.maxHp; ui.hp(); }
+                    if(k==='spd') state.stats.spd += 0.05;
+                    if(k==='crit') state.stats.crit += 0.02;
+                    document.getElementById(`v-${k}`).innerText = k==='crit'? Math.floor(state.stats.crit*100)+'%' : 'Lv.'+u.l;
+                    document.getElementById(`c-${k}`).innerText = u.c + ' G';
+                    ui.hud(); saveGame();
+                }
+            },
+            mine: () => {
+                if(state.mineCd > 0) return;
+                state.dia += 300; state.mineCd = 60;
+                ui.hud(); ui.ft(300, playerGrp.position, true); saveGame();
+            },
+            enchant: () => {
+                const cost = 100 * (state.wep.lv + 1);
+                if(state.gold >= cost) {
+                    state.gold -= cost;
+                    state.wep.lv++;
+                    buildPlayer();
+                    document.getElementById('ui-forge-lv').innerText = '+' + state.wep.lv;
+                    document.getElementById('ui-forge-cost').innerText = 100 * (state.wep.lv + 1);
+                    ui.hud(); ui.flash('flash-crit'); saveGame();
+                }
+            },
+            gacha: (type) => {
+                const cost = type==='wep'?100 : type==='skill'?200 : 500;
+                if(state.dia < cost) return;
+                state.dia -= cost;
+
+                if(type === 'wep') {
+                    const wType = WEAPONS[Math.floor(Math.random()*WEAPONS.length)];
+                    const rVal = Math.random();
+                    let rank = RANKS[0];
+                    if(rVal>0.98) rank=RANKS[5]; else if(rVal>0.9) rank=RANKS[4]; else if(rVal>0.8) rank=RANKS[3];
+                    else if(rVal>0.6) rank=RANKS[2]; else if(rVal>0.4) rank=RANKS[1];
+
+                    if(rank.m >= state.wep.rank.m) {
+                        state.wep = { type:wType, rank:rank, lv:0 };
+                        buildPlayer();
+                        document.getElementById('ui-forge-name').innerText = wType;
+                        document.getElementById('ui-forge-rank').innerText = `Rank ${rank.id}`;
+                        document.getElementById('ui-forge-lv').innerText = '+0';
+                        ui.modal("NEW WEAPON!", `[${rank.id}] ${wType}`, '#'+rank.c.toString(16));
+                    } else {
+                        state.gold += 500;
+                        ui.modal("분해됨", "하위 등급 (+500 G)", "#888");
+                    }
+                } else if(type === 'skill') {
+                    const base = SKILLS[Math.floor(Math.random()*SKILLS.length)];
+                    const s = { ...base, name: base.name, color: Math.random()*0xffffff, id: Date.now() }; 
+                    state.skills.push(s);
+                    ui.renderInv();
+                    ui.modal("NEW SKILL!", s.name, '#'+s.color.toString(16));
+                } else if(type === 'skin') {
+                    const s = SKINS[Math.floor(Math.random()*SKINS.length)];
+                    state.skin = s;
+                    buildPlayer();
+                    document.getElementById('ui-current-skin').innerText = `스킨: ${s.name}`;
+                    ui.modal("NEW SKIN!", `[${s.tier}] ${s.name}`, '#'+s.color.toString(16));
+                }
+                ui.hud(); saveGame();
+            },
+            resetData: () => {
+                if(confirm("모든 데이터를 초기화하시겠습니까?")) {
+                    localStorage.removeItem('neon_eternal_save');
+                    location.reload();
+                }
+            }
+        };
+        window.game = game;
+
+        // Init
+        loadGame();
+        buildPlayer();
+        ui.hud(); ui.hp(); ui.renderSlots(); ui.renderInv();
+        
+        // Sync UI with loaded data
+        document.getElementById('ui-forge-name').innerText = state.wep.type;
+        document.getElementById('ui-forge-rank').innerText = `Rank ${state.wep.rank.id}`;
+        document.getElementById('ui-forge-lv').innerText = '+' + state.wep.lv;
+        document.getElementById('ui-current-skin').innerText = `스킨: ${state.skin.name}`;
+        
+        update();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
